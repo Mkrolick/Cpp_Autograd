@@ -8,6 +8,7 @@
 #include <memory>
 
 
+
 class Value {
 public:
     double data;
@@ -213,21 +214,166 @@ std::ostream& operator<<(std::ostream &strm, Value &val) {
 }
 
 
+class Neuron {
+    public:
+    std::vector<Value> weight;
+    Value bias;
+    
+    Neuron(int nin) {
+        for (int i = 0; i < nin; i++) {
+            weight.push_back(Value((double)rand() / RAND_MAX * 2.0 - 1.0));
+        }
+        bias = Value((double)rand() / RAND_MAX * 2.0 - 1.0); 
+    }
+
+    Value call(std::vector<Value>& x) {
+
+        Value sum = Value(0.0);
+        for(size_t i = 0; i < weight.size(); i++) {
+            Value pair = weight[i] * x[i];
+            sum = sum + pair;
+        }
+
+        Value res = (bias + sum).tanh();
+
+        return res;
+    }
+
+    std::vector<Value*> parameters() {
+        std::vector<Value*> parameters;
+        parameters.reserve(weight.size() + 1);  // Reserve space for weights + bias
+
+        for (auto& w : weight) {  // Note: using & to get reference
+            parameters.push_back(&w);
+        }
+        parameters.push_back(&bias);
+        return parameters;
+    }
+ 
+};
+
+
+class Layer {
+    public:
+    std::vector<Neuron> neurons;
+    
+    Layer(int nin, int nout) {
+        for (int i = 0; i < nout; i++) {
+            neurons.push_back(Neuron(nin));
+        }
+    }
+
+    std::vector<Value> call(std::vector<Value> x) {
+        std::vector<Value> res;
+        // Reserve space for the results
+        res.reserve(neurons.size());
+        
+        // Use push_back instead of transform
+        for (auto& neuron : neurons) {
+            res.push_back(neuron.call(x));
+        }
+        return res;
+    }
+
+    std::vector<Value*> parameters() {
+        std::vector<Value*> vals;
+        for (auto& neuron : neurons) {  // Note: using & to get reference
+            auto params = neuron.parameters();
+            vals.insert(vals.end(), params.begin(), params.end());
+        }
+        return vals;
+    }
+
+};
+
+class MLP {
+    public:
+        std::vector<Layer> layers;
+        std::vector<int> size;
+        
+        MLP(int nin, std::vector<int> nouts) {
+            size = {nin};
+
+            for (auto layer : nouts) {
+                size.push_back(layer);
+            }
+            
+            for (int i = 0; i < size.size() - 1; i++) {
+                layers.push_back(Layer(size.at(i), size.at(i + 1)));
+            }        
+        }
+
+        Value call(std::vector<double> x) {
+            
+            std::vector<Value> values = {};
+
+            for (auto val : x) {
+                values.push_back(Value(val));
+            }
+
+            return call(values);
+        }
+
+        Value call(std::vector<Value> x) {
+            for (auto layer : layers) {
+                x = layer.call(x);
+            }
+            return x.at(0);
+        }
+
+    std::vector<Value*> parameters() {
+        std::vector<Value*> vals;
+        for (auto& layer : layers) {  // Note: using & to get reference
+            auto params = layer.parameters();
+            vals.insert(vals.end(), params.begin(), params.end());
+        }
+        return vals;
+    }
+
+};
+
+
 int main(int argc, char* argv[]) {
     
-    auto a = Value(-2.0, {}, "", "a");
-    auto b = Value(3.0, {}, "", "b");
+    std::vector<std::vector<double>> x = {
+        {1,2,3,4},
+        {-1,-2,-3,-4},
+        {1,3,4,5},
+    };
 
-    auto d = a * b; d.label = 'd';
-    auto e = a + b; e.label = 'e';
-    auto f = d * e; f.label = 'f';
-
-    f.full_backwards();
-
-    std::cout << a << std::endl;
-    std::cout << b << std::endl;
-    std::cout << d << std::endl;
-    std::cout << e << std::endl;
-    std::cout << f << std::endl;
-
+    std::vector<double> y = {1,-1,1};
+    // Create MLP with 4 inputs and hidden layers [4,4,1]
+    MLP mlp = MLP(4, {4,4,1});  // Heap allocation
+    
+    // Training parameters
+    int epochs = 100;
+    double learning_rate = 0.05;
+    
+    // Training loop
+    for (int epoch = 0; epoch < epochs; epoch++) {
+        Value loss = Value(0.0);
+        
+        // Calculate loss for each training example
+        for (size_t i = 0; i < x.size(); i++) {
+            Value pred = mlp.call(x[i]);  // Use -> instead of .
+            Value diff = pred - y[i];
+            Value diff_squared = diff * diff;
+            loss = loss + diff_squared;
+        }
+        
+        // Backward pass
+        loss.full_backwards();
+        
+        // Update parameters
+        auto params = mlp.parameters();  // Use -> instead of .
+        for (Value* p : params) {
+            p->data -= learning_rate * p->grad;
+            p->grad = 0;
+        }
+        
+        if (epoch % 10 == 0) {
+            std::cout << "Epoch " << epoch << " Loss: " << loss.data << std::endl;
+        }
+    }
+    
 }
