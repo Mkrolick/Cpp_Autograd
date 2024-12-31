@@ -1,1 +1,1 @@
-A C++ Autograd implementation from Andrej Karpathy's tutorial.
+A C++ Autograd implementation based on Andrej Karpathy's Micrograd.
